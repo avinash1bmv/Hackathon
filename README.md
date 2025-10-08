@@ -5,4 +5,4 @@
 ## check PR
 
 ### Transition testing
-scrum 34 check-2
+scrum 37 Pre Demo Testing
