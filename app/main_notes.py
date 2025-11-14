@@ -12,34 +12,35 @@ app = FastAPI(title='Notes API (FastAPI + MongoDB)')
 
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
 
-@app.on_event('startup')
-async def startup_indexes():
-    coll = get_notes_collection()
-    await coll.create_index([('title', ASCENDING), ('created_day', ASCENDING)], unique=True, name='title_createdday_unique')
-    await coll.create_index([('created_at', DESCENDING)], name='created_at_desc')
-
-def utc_now():
-    return datetime.now(timezone.utc)
-
-@app.post('/api/v1/notes', status_code=status.HTTP_201_CREATED)
-async def create_note(payload: NoteCreate):
-    coll = get_notes_collection()
-    now = utc_now()
-    doc = { 'title': payload.title, 'body': payload.body, 'created_at': now, 'updated_at': now, 'created_day': now.date().isoformat() }
+@app.post('/api/v1/notes', status_code=status.HTTP_201_CREATED, response_model=NoteResponse)
+async def create_note(note: NoteCreate):
     try:
-        res = await coll.insert_one(doc)
+        collection = get_notes_collection()
+        now = datetime.now(timezone.utc)
+        note_data = note.dict()
+        note_data['created_at'] = now
+        note_data['updated_at'] = now
+        result = await collection.insert_one(note_data)
+        note_data['id'] = str(result.inserted_id)
+        return note_data
     except DuplicateKeyError:
-        raise HTTPException(status_code=400, detail='Note with same title already exists for today')
-    except PyMongoError:
-        raise HTTPException(status_code=500, detail='database error')
-    return JSONResponse(status_code=status.HTTP_201_CREATED, content={'id': str(res.inserted_id)})
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Note with the same title and date already exists')
+    except PyMongoError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.get('/api/v1/notes/{id}', response_model=NoteResponse)
-async def get_note(id: str = Path(..., description='Mongo ObjectId')):
-    if not ObjectId.is_valid(id):
-        raise HTTPException(status_code=400, detail='Invalid id')
-    coll = get_notes_collection()
-    doc = await coll.find_one({'_id': ObjectId(id)})
-    if not doc:
-        raise HTTPException(status_code=404, detail='Note not found')
-    return NoteResponse(id=str(doc['_id']), title=doc['title'], body=doc['body'], created_at=doc['created_at'], updated_at=doc['updated_at'])
+async def get_note(id: str = Path(..., title='Note ID')):
+    try:
+        collection = get_notes_collection()
+        note = await collection.find_one({'_id': ObjectId(id)})
+        if note:
+            return NoteResponse(**note)
+        else:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Note not found')
+    except PyMongoError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+# Ensure indexes
+collection = get_notes_collection()
+await collection.create_index([('title', ASCENDING), ('created_at', ASCENDING)], unique=True)
+await collection.create_index([('created_at', DESCENDING)])
