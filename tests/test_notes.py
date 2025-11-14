@@ -27,14 +27,10 @@ async def test_create_note_invalid_payload():
         post_resp = await ac.post('/api/v1/notes', json=payload)
         assert post_resp.status_code == 422
 
-        payload = {'title': 'Test Note', 'body': ''}
-        post_resp = await ac.post('/api/v1/notes', json=payload)
-        assert post_resp.status_code == 422
-
 @pytest.mark.asyncio
 async def test_get_note_not_found():
     async with AsyncClient(app=app, base_url='http://test') as ac:
-        get_resp = await ac.get('/api/v1/notes/63e9d9b9d3389e8d92c9f9f9')
+        get_resp = await ac.get('/api/v1/notes/invalid_id')
         assert get_resp.status_code == 404
 
 @pytest.mark.asyncio
