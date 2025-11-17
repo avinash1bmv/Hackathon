@@ -2,37 +2,15 @@ from pydantic import BaseModel, Field, validator
 from typing import Optional
 from datetime import datetime
 
-class NoteCreate(BaseModel):
-    title: str = Field(..., min_length=1, max_length=120)
-    body: str = Field(..., min_length=1, max_length=5000)
-
-    @validator('title')
-    def _t(cls, v: str): return v.strip()
-
-    @validator('body')
-    def _b(cls, v: str): return v.strip()
-
-class NoteResponse(BaseModel):
-    id: str
-    title: str
-    body: str
-    created_at: datetime
-    updated_at: datetime
-
 class NoteUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=120)
     body: Optional[str] = Field(None, min_length=1, max_length=5000)
 
-    @validator('title')
-    def _t(cls, v: str): return v.strip() if v else v
-
-    @validator('body')
-    def _b(cls, v: str): return v.strip() if v else v
+    @validator('title', 'body')
+    def _strip(cls, v):
+        return v.strip() if v else v
 
 class NoteList(BaseModel):
-    id: str
-    title: str
-    body: str
-    created_at: datetime
-    updated_at: datetime
-    deleted_at: Optional[datetime] = None
+    limit: int = Field(10, gt=0, lt=101)
+    skip: int = Field(0, ge=0)
+    search: Optional[str] = Field(None, min_length=1)

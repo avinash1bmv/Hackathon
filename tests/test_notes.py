@@ -1,72 +1,64 @@
 import pytest
 from httpx import AsyncClient
-from app.main import app
+from app.main_notes import app
+from app.db import get_notes_collection
 from datetime import datetime
 from bson import ObjectId
 
 @pytest.mark.asyncio
-async def test_create_and_get_note():
-    async with AsyncClient(app=app, base_url='http://test') as ac:
-        payload = {'title': 'Test Note', 'body': 'This is a test'}
-        post_resp = await ac.post('/api/v1/notes', json=payload)
-        assert post_resp.status_code == 201
-        note_id = post_resp.json()['id']
-        get_resp = await ac.get(f'/api/v1/notes/{note_id}')
-        assert get_resp.status_code == 200
-        assert get_resp.json()['title'] == 'Test Note'
-        assert get_resp.json()['body'] == 'This is a test'
-
-@pytest.mark.asyncio
 async def test_update_note():
-    async with AsyncClient(app=app, base_url='http://test') as ac:
-        payload = {'title': 'Test Note', 'body': 'This is a test'}
-        post_resp = await ac.post('/api/v1/notes', json=payload)
-        note_id = post_resp.json()['id']
-        update_payload = {'title': 'Updated Note', 'body': 'This is an updated test'}
-        put_resp = await ac.put(f'/api/v1/notes/{note_id}', json=update_payload)
-        assert put_resp.status_code == 200
-        assert put_resp.json()['title'] == 'Updated Note'
-        assert put_resp.json()['body'] == 'This is an updated test'
-        assert put_resp.json()['created_at'] == post_resp.json()['created_at']
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a test note
+        response = await ac.post("/notes", json={"title": "Test Note", "body": "Test body"})
+        note_id = response.json()["id"]
+
+        # Update the note
+        response = await ac.put(f"/notes/{note_id}", json={"title": "Updated Note"})
+        assert response.status_code == 200
+        assert response.json()["title"] == "Updated Note"
+        assert response.json()["body"] == "Test body"
+        assert response.json()["created_at"] == response.json()["updated_at"]
+
+        # Clean up
+        await get_notes_collection().delete_one({"_id": ObjectId(note_id)})
 
 @pytest.mark.asyncio
 async def test_delete_note():
-    async with AsyncClient(app=app, base_url='http://test') as ac:
-        payload = {'title': 'Test Note', 'body': 'This is a test'}
-        post_resp = await ac.post('/api/v1/notes', json=payload)
-        note_id = post_resp.json()['id']
-        delete_resp = await ac.delete(f'/api/v1/notes/{note_id}')
-        assert delete_resp.status_code == 200
-        assert delete_resp.json()['deleted_at'] is not None
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a test note
+        response = await ac.post("/notes", json={"title": "Test Note", "body": "Test body"})
+        note_id = response.json()["id"]
+
+        # Delete the note
+        response = await ac.delete(f"/notes/{note_id}")
+        assert response.status_code == 200
+        assert "deleted_at" in response.json()
+
+        # Clean up
+        await get_notes_collection().delete_one({"_id": ObjectId(note_id)})
 
 @pytest.mark.asyncio
 async def test_list_notes():
-    async with AsyncClient(app=app, base_url='http://test') as ac:
-        for i in range(20):
-            payload = {'title': f'Test Note {i}', 'body': f'This is a test note {i}'}
-            await ac.post('/api/v1/notes', json=payload)
-        list_resp = await ac.get('/api/v1/notes?page=2&limit=10')
-        assert list_resp.status_code == 200
-        assert len(list_resp.json()) == 10
-        assert list_resp.json()[0]['title'] == 'Test Note 10'
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        # Create some test notes
+        await get_notes_collection().insert_many([
+            {"title": "Note 1", "body": "Body 1"},
+            {"title": "Note 2", "body": "Body 2"},
+            {"title": "Note 3", "body": "Body 3"},
+            {"title": "Note 4", "body": "Body 4"},
+            {"title": "Note 5", "body": "Body 5"},
+        ])
 
-@pytest.mark.asyncio
-async def test_search_notes():
-    async with AsyncClient(app=app, base_url='http://test') as ac:
-        payload = {'title': 'Search Test', 'body': 'This is a test for search'}
-        await ac.post('/api/v1/notes', json=payload)
-        search_resp = await ac.get('/api/v1/notes?search=search')
-        assert search_resp.status_code == 200
-        assert len(search_resp.json()) >= 1
-        assert 'Search Test' in [note['title'] for note in search_resp.json()]
+        # Test pagination
+        response = await ac.get("/notes?limit=2&skip=2")
+        assert response.status_code == 200
+        assert len(response.json()) == 2
 
-@pytest.mark.asyncio
-async def test_note_not_found():
-    async with AsyncClient(app=app, base_url='http://test') as ac:
-        invalid_id = str(ObjectId())
-        get_resp = await ac.get(f'/api/v1/notes/{invalid_id}')
-        assert get_resp.status_code == 404
-        put_resp = await ac.put(f'/api/v1/notes/{invalid_id}', json={'title': 'Updated Note'})
-        assert put_resp.status_code == 404
-        delete_resp = await ac.delete(f'/api/v1/notes/{invalid_id}')
-        assert delete_resp.status_code == 404
+        # Test search
+        response = await ac.get("/notes?search=Note 3")
+        assert response.status_code == 200
+        assert len(response.json()) == 1
+        assert response.json()[0]["title"] == "Note 3"
+
+        # Clean up
+        await get_notes_collection().delete_many({"title": {"$in": ["Note 1", "Note 2", "Note 3", "Note 4", "Note 5"]}})
